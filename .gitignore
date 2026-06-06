@@ -1,0 +1,8 @@
+data.json
+.obsidian/
+node_modules/
+dist/
+*.log
+*.zip
+.DS_Store
+Thumbs.db

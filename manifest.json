@@ -1,0 +1,10 @@
+{
+  "id": "llm-wiki-parser",
+  "name": "LLM Wiki Parser",
+  "version": "0.3.0",
+  "minAppVersion": "1.5.0",
+  "description": "Digest notes into categorized topic pages and chat with your Obsidian knowledge base.",
+  "author": "Codex",
+  "authorUrl": "https://openai.com",
+  "isDesktopOnly": false
+}
