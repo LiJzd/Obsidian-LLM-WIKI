@@ -48,10 +48,11 @@ The plugin will:
 
 1. Extract text.
 2. Fetch URL page text when enabled.
-3. Ask the model to classify the material into a top-level category and a reusable subcategory.
-4. Create a source archive in `Sources/`.
-5. Create or update a topic note in `Knowledge/<category>/<subcategory>/`.
-6. Update the subcategory `_index.md` note.
+3. Ask the model to split the material into reusable `knowledge_units`.
+4. Route each unit into a top-level category, subcategory, and topic.
+5. Create one source archive in `Sources/`.
+6. Create or update one or more topic notes in `Knowledge/<category>/<subcategory>/`.
+7. Update each subcategory `_index.md` note.
 
 The model is prompted to extract:
 
@@ -64,6 +65,8 @@ The model is prompted to extract:
 - Key terms
 - Related topics
 - Open questions
+
+If the model output does not contain usable knowledge units, the plugin saves the source as `needs_review` and does not create empty Knowledge notes.
 
 ## 3. Chat With Your Knowledge Base
 
@@ -101,9 +104,11 @@ Sources/
 QA/
 System/
   Taxonomy.md
+  Legacy/
 ```
 
 `Knowledge/` is your main reading surface. `Sources/` keeps the original inputs for traceability.
+Old single-level or broken topic notes are archived under `System/Legacy/<date>/` before new digestion writes fresh structured notes.
 
 ## 5. Recommended Workflow
 

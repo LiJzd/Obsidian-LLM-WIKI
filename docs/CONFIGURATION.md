@@ -75,6 +75,22 @@ Knowledge/<category>/<subcategory>/_index.md
 
 The subcategory should be a reusable method or concept area, not the title of a single article.
 
+`Sources/` keeps one archive per input. A single source can point to multiple topics through `digested_into: []`.
+
+If the model does not return valid `knowledge_units`, the source is saved with:
+
+```text
+status: needs_review
+```
+
+No Knowledge note is created in that case.
+
+Before a new digest run, old single-level topic notes under `Knowledge/<category>/<topic>.md` are archived to:
+
+```text
+System/Legacy/<date>/<category>/<topic>.md
+```
+
 ## Retrieval
 
 The first version uses local full-text search over:
