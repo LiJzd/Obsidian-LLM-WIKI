@@ -91,6 +91,11 @@ function slugify(value, fallback = "Untitled") {
   return (text || fallback).slice(0, 90);
 }
 
+function subcategoryName(value, fallback = "通用") {
+  const name = slugify(value || fallback, fallback);
+  return name === "_" ? fallback : name;
+}
+
 function yamlString(value) {
   return JSON.stringify(value ?? "", null, 0);
 }
@@ -410,12 +415,16 @@ function coerceDigest(raw, fallbackTitle, sourceType, text) {
     title: slugify(result.title || fallbackTitle || "未命名主题"),
     source_type: String(result.source_type || sourceType || "text"),
     category,
+    subcategory: subcategoryName(result.subcategory || result.cluster || result.domain || result.topic_group || "通用"),
     topic: slugify(result.topic || result.title || fallbackTitle || "未命名主题"),
     aliases: Array.isArray(result.aliases) ? result.aliases.map(String).slice(0, 12) : [],
     summary: String(result.summary || stripMarkdown(text).slice(0, 280)),
     definition: String(result.definition || ""),
     key_points: toStringArray(result.key_points, 8),
     methods: toStringArray(result.methods, 8),
+    boundaries: toStringArray(result.boundaries || result.scope, 8),
+    decision_rules: toStringArray(result.decision_rules || result.rules, 8),
+    examples: toStringArray(result.examples || result.cases, 8),
     terms: toStringArray(result.terms, 12),
     related_topics: toStringArray(result.related_topics, 12).map((item) => slugify(item)),
     open_questions: toStringArray(result.open_questions || result.questions, 10),
@@ -452,6 +461,7 @@ function topicTemplate(digest, sourceLink) {
     frontmatter({
       type: "topic",
       category: digest.category,
+      subcategory: digest.subcategory,
       aliases: digest.aliases,
       status: "active",
       created: today(),
@@ -473,6 +483,18 @@ function topicTemplate(digest, sourceLink) {
     "## 实践方法",
     "",
     listBlock(digest.methods),
+    "",
+    "## 适用边界",
+    "",
+    listBlock(digest.boundaries),
+    "",
+    "## 决策规则",
+    "",
+    listBlock(digest.decision_rules),
+    "",
+    "## 案例与例子",
+    "",
+    listBlock(digest.examples),
     "",
     "## 关键术语",
     "",
@@ -500,6 +522,9 @@ function sourceTemplate(title, kind, ref, digest, original, topicLink) {
       type: "source",
       status: "archived",
       source_type: digest.source_type || kind,
+      category: digest.category,
+      subcategory: digest.subcategory,
+      topic: digest.topic,
       url: extractUrls(ref || original)[0] || "",
       created: today(),
       digested_into: topicLink,
@@ -528,6 +553,22 @@ function sourceTemplate(title, kind, ref, digest, original, topicLink) {
 function listBlock(items) {
   const values = (items || []).filter(Boolean);
   return values.length ? values.map((item) => `- ${item}`).join("\n") : "-";
+}
+
+function taxonomySubcategoryGuide() {
+  return [
+    "## 小分类规则",
+    "",
+    "- 每个一级分类下应继续按稳定的小专题组织，例如 `Knowledge/RAG/检索策略/`、`Knowledge/RAG/重排序/`、`Knowledge/Agent/工具调用/`。",
+    "- 小分类应描述长期可复用的方法域，不应直接使用文章标题。",
+    "- 每个小分类目录会生成 `_index.md`，用于汇总该小分类下的主题笔记。",
+    "",
+    "## 消化标准",
+    "",
+    "- 主题笔记应提炼定义、核心观点、实践方法、适用边界、决策规则、案例与例子。",
+    "- 不把原文摘要直接堆到主题末尾；新材料应合并进已有结构。",
+    "",
+  ].join("\n");
 }
 
 function extractJson(text) {
@@ -686,7 +727,14 @@ class LlmWikiParserPlugin extends Plugin {
 
   async ensureTaxonomyNote() {
     const path = normalizePath(`${this.settings.systemFolder}/Taxonomy.md`);
-    if (this.app.vault.getAbstractFileByPath(path)) return;
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) {
+      const current = await this.app.vault.read(existing);
+      if (!current.includes("## 小分类规则")) {
+        await this.app.vault.modify(existing, `${current.trimEnd()}\n\n${taxonomySubcategoryGuide()}\n`);
+      }
+      return;
+    }
     const content = [
       frontmatter({ type: "system", status: "active", created: today(), updated: today(), tags: ["llm-wiki"] }),
       "",
@@ -707,6 +755,7 @@ class LlmWikiParserPlugin extends Plugin {
       "- 产品案例: 产品设计、商业案例、用户场景。",
       "- 论文资料: 论文、报告、资料型内容或暂无法归类内容。",
       "",
+      taxonomySubcategoryGuide(),
     ].join("\n");
     await this.app.vault.create(path, content);
   }
@@ -857,10 +906,16 @@ class LlmWikiParserPlugin extends Plugin {
     }
     const prompt = [
       `固定分类只能从这里选择: ${CATEGORIES.join(", ")}`,
-      "请把材料消化成 Obsidian 知识库主题更新计划。",
+      "请把材料真正消化成 Obsidian 知识库主题更新计划，而不是普通摘要。",
+      "先判断它属于哪个一级分类，再在该分类下创建或复用一个更细的小分类 subcategory。",
+      "subcategory 应是稳定的小专题/方法域，例如: 检索策略、重排序、向量数据库、上下文工程、多智能体协作、提示词模板、评测指标、部署监控。",
+      "topic 应是小分类下的具体主题笔记名，避免把整篇文章标题直接当主题；优先使用可长期复用的概念名。",
+      "输出要体现消化: 抽象定义、核心结论、实践步骤、适用边界、决策规则、例子、术语、待研究问题。",
+      "如果材料只是新闻或案例，也要提炼出可复用经验和判断标准。",
       "只返回 JSON，不要 Markdown。",
-      "JSON 字段: title, source_type, category, topic, aliases, summary, definition, key_points, methods, terms, related_topics, open_questions, evidence, links。",
-      "category 必须是固定分类之一。topic 是应归入或创建的主题笔记名。",
+      "JSON 字段: title, source_type, category, subcategory, topic, aliases, summary, definition, key_points, methods, boundaries, decision_rules, examples, terms, related_topics, open_questions, evidence, links。",
+      "category 必须是固定分类之一。subcategory 是一级分类下的小分类。topic 是应归入或创建的主题笔记名。",
+      "key_points 写结论，不写原文复述；methods 写可执行步骤；boundaries 写何时适用/不适用；decision_rules 写判断规则；examples 写压缩后的例子。",
       "",
       `标题: ${title}`,
       `来源类型: ${sourceType}`,
@@ -880,9 +935,10 @@ class LlmWikiParserPlugin extends Plugin {
     }
     const prompt = [
       "请把旧主题笔记和新增材料合并为一篇完整 Obsidian Markdown 主题笔记。",
-      "必须保持这些章节: 定义、核心观点、实践方法、关键术语、关联主题、证据来源、待研究问题。",
-      "去重、整合相近观点，不要只在末尾堆砌。",
-      "保留 YAML frontmatter，更新 updated，sources 中加入新来源。",
+      "必须保持这些章节: 定义、核心观点、实践方法、适用边界、决策规则、案例与例子、关键术语、关联主题、证据来源、待研究问题。",
+      "去重、归纳、抽象出稳定概念；不要只在末尾堆砌，不要保留原文流水账。",
+      "把新增内容消化为可执行方法、判断规则、适用/不适用边界和可复习的知识点。",
+      "保留 YAML frontmatter，更新 updated，sources 中加入新来源；category 和 subcategory 必须保留。",
       "证据来源章节必须包含新来源链接。",
       "",
       "旧主题笔记:",
@@ -912,6 +968,18 @@ class LlmWikiParserPlugin extends Plugin {
       "## 实践方法",
       "",
       listBlock(digest.methods),
+      "",
+      "## 适用边界",
+      "",
+      listBlock(digest.boundaries),
+      "",
+      "## 决策规则",
+      "",
+      listBlock(digest.decision_rules),
+      "",
+      "## 案例与例子",
+      "",
+      listBlock(digest.examples),
       "",
       "## 关键术语",
       "",
@@ -971,6 +1039,7 @@ class LlmWikiParserPlugin extends Plugin {
       ? await this.mergeTopicWithModel(existingTopic, digest, sourceLink)
       : topicTemplate(digest, sourceLink);
     await this.app.vault.modify(topicFile, mergedTopic);
+    await this.updateSubcategoryIndex(digest, topicFile);
 
     return { topicFile, sourceFile, digest };
   }
@@ -985,12 +1054,53 @@ class LlmWikiParserPlugin extends Plugin {
   async findOrCreateTopic(digest) {
     const candidates = await this.findTopicCandidates(digest, 1);
     if (candidates.length && candidates[0].score >= 15) return candidates[0].file;
-    const path = await this.uniquePath(`${this.settings.knowledgeFolder}/${digest.category}/${slugify(digest.topic)}.md`);
+    const subcategory = subcategoryName(digest.subcategory);
+    await this.ensureFolder(`${this.settings.knowledgeFolder}/${digest.category}/${subcategory}`);
+    const path = await this.uniquePath(`${this.settings.knowledgeFolder}/${digest.category}/${subcategory}/${slugify(digest.topic)}.md`);
     return await this.app.vault.create(path, "");
   }
 
+  async updateSubcategoryIndex(digest, topicFile) {
+    const subcategory = subcategoryName(digest.subcategory);
+    const folder = normalizePath(`${this.settings.knowledgeFolder}/${digest.category}/${subcategory}`);
+    await this.ensureFolder(folder);
+    const path = normalizePath(`${folder}/_index.md`);
+    const topicLink = linkForFile(topicFile);
+    const summary = digest.summary ? ` - ${digest.summary}` : "";
+    let content = "";
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) {
+      content = await this.app.vault.read(existing);
+      if (content.includes(topicLink)) return;
+      content = `${content.trimEnd()}\n- ${topicLink}${summary}\n`;
+      await this.app.vault.modify(existing, content);
+      return;
+    }
+    content = [
+      frontmatter({
+        type: "subcategory",
+        category: digest.category,
+        subcategory,
+        status: "active",
+        created: today(),
+        updated: today(),
+        tags: ["llm-wiki-index"],
+      }),
+      "",
+      `# ${subcategory}`,
+      "",
+      `所属分类: [[${digest.category}]]`,
+      "",
+      "## 主题索引",
+      "",
+      `- ${topicLink}${summary}`,
+      "",
+    ].join("\n");
+    await this.app.vault.create(path, content);
+  }
+
   async findTopicCandidates(digest, limit = 5) {
-    const topicWords = words([digest.topic, digest.summary, ...(digest.aliases || [])].join(" "));
+    const topicWords = words([digest.topic, digest.subcategory, digest.summary, ...(digest.aliases || [])].join(" "));
     const files = this.app.vault.getMarkdownFiles()
       .filter((file) => file.path.startsWith(`${this.settings.knowledgeFolder}/`));
     const scored = [];
@@ -1002,6 +1112,7 @@ class LlmWikiParserPlugin extends Plugin {
       if (lowerBase === String(digest.topic).toLowerCase()) score += 30;
       if (lowerBase.includes(String(digest.topic).toLowerCase())) score += 15;
       if (lowerPath.includes(`/${digest.category.toLowerCase()}/`)) score += 5;
+      if (lowerPath.includes(`/${String(digest.subcategory).toLowerCase()}/`)) score += 8;
       for (const alias of parseAliases(content)) {
         if (alias.toLowerCase() === String(digest.topic).toLowerCase()) score += 20;
       }
@@ -1371,7 +1482,7 @@ class LlmWikiParserView extends ItemView {
     await this.runJob("消化材料", async () => {
       const result = await this.plugin.digestText("Pasted Text", text, "paste", "parser-ui");
       this.digestInput.value = "";
-      this.addLog(`入库到 ${result.digest.category}/${result.digest.topic}`, result.topicFile);
+      this.addLog(`入库到 ${result.digest.category}/${result.digest.subcategory}/${result.digest.topic}`, result.topicFile);
     });
   }
 

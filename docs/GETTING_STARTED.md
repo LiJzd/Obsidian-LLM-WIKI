@@ -48,9 +48,22 @@ The plugin will:
 
 1. Extract text.
 2. Fetch URL page text when enabled.
-3. Ask the model to classify and digest the material.
+3. Ask the model to classify the material into a top-level category and a reusable subcategory.
 4. Create a source archive in `Sources/`.
-5. Create or update a topic note in `Knowledge/<category>/`.
+5. Create or update a topic note in `Knowledge/<category>/<subcategory>/`.
+6. Update the subcategory `_index.md` note.
+
+The model is prompted to extract:
+
+- Definition
+- Core conclusions
+- Practical methods
+- Applicable boundaries
+- Decision rules
+- Examples
+- Key terms
+- Related topics
+- Open questions
 
 ## 3. Chat With Your Knowledge Base
 
@@ -74,7 +87,14 @@ The plugin creates this structure:
 ```text
 Knowledge/
   RAG/
+    检索策略/
+      _index.md
+      查询改写.md
+    重排序/
+      _index.md
   Agent/
+    工具调用/
+      _index.md
   模型/
   ...
 Sources/

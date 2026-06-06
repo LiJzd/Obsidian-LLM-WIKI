@@ -61,6 +61,20 @@ You can change:
 
 Changing folders does not migrate old notes automatically.
 
+Topic notes are written to:
+
+```text
+Knowledge/<category>/<subcategory>/<topic>.md
+```
+
+Each subcategory also gets:
+
+```text
+Knowledge/<category>/<subcategory>/_index.md
+```
+
+The subcategory should be a reusable method or concept area, not the title of a single article.
+
 ## Retrieval
 
 The first version uses local full-text search over:

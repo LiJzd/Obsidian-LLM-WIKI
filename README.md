@@ -4,7 +4,9 @@ LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials int
 
 ## Features
 
-- Digest notes, links, and documents into `Knowledge/<category>/<topic>.md`.
+- Digest notes, links, and documents into `Knowledge/<category>/<subcategory>/<topic>.md`.
+- Builds stable subcategories inside each top-level taxonomy category.
+- Converts source material into reusable definitions, methods, boundaries, decision rules, examples, terms, and open questions.
 - Preserve original materials in `Sources/`.
 - ChatGPT-like knowledge-base chat with conversation history.
 - Local retrieval over `Knowledge/` and `Sources/` before model answering.
@@ -41,7 +43,7 @@ See [Getting Started](docs/GETTING_STARTED.md) for the full guide.
 
 ## Default Folders
 
-- `Knowledge/`: categorized topic notes.
+- `Knowledge/`: categorized topic notes, organized as `<category>/<subcategory>/<topic>.md`.
 - `Sources/`: original source archives.
 - `QA/`: manually saved question-answer logs.
 - `System/Taxonomy.md`: category definitions.
