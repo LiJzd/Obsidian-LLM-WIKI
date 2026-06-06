@@ -10,6 +10,8 @@ LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials int
 - Converts source material into reusable definitions, methods, boundaries, decision rules, examples, terms, and open questions.
 - Preserve original materials in `Sources/`.
 - Marks weak model output as `needs_review` instead of creating empty Knowledge notes.
+- Keeps graph noise low by linking only known related topics and offering a clean graph view preset.
+- Includes a reset button for clearing generated wiki artifacts during testing.
 - ChatGPT-like knowledge-base chat with conversation history.
 - Local retrieval over `Knowledge/` and `Sources/` before model answering.
 - DeepSeek Chat Completions or Xiaomi MiMo as the primary provider.

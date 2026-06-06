@@ -91,6 +91,32 @@ Before a new digest run, old single-level topic notes under `Knowledge/<category
 System/Legacy/<date>/<category>/<topic>.md
 ```
 
+## Graph Cleanup
+
+Use `Apply clean graph view` in plugin settings to update Obsidian's graph configuration.
+
+The preset:
+
+- Shows only notes under `Knowledge/`.
+- Hides `_index.md`.
+- Hides unresolved nodes.
+- Hides orphan nodes.
+- Keeps `Sources/` and `System/` out of the graph.
+
+The plugin also avoids creating noisy graph nodes by only turning related topics into `[[links]]` when the target topic already exists or is created in the same digest batch. Other related topics stay as plain text candidates.
+
+## Reset Generated Wiki
+
+Use `Reset generated wiki` in plugin settings to remove generated artifacts during testing:
+
+- `Knowledge/`
+- `Sources/`
+- `System/`
+- old parser folders such as `03_Relations/`
+- root-level empty notes created by accidental graph clicks
+
+The reset does not delete plugin settings, API keys, or `QA/`.
+
 ## Retrieval
 
 The first version uses local full-text search over:

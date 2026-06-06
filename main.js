@@ -408,6 +408,34 @@ function linkForFile(file) {
   return `[[${file.basename}]]`;
 }
 
+function wikiLinkTarget(link) {
+  return String(link || "")
+    .replace(/^\[\[/, "")
+    .replace(/\]\]$/, "")
+    .split("|")[0]
+    .split("#")[0]
+    .trim();
+}
+
+function isGraphNoiseTopic(value) {
+  const text = String(value || "").trim();
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  return lower === "_index"
+    || lower === "taxonomy"
+    || lower === "sources"
+    || lower === "source"
+    || CATEGORIES.includes(text);
+}
+
+function sanitizeWikiLinks(markdown, allowedTargets) {
+  const allowed = new Set(Array.from(allowedTargets || []).map((item) => String(item).toLowerCase()));
+  return String(markdown || "").replace(/\[\[([^\]]+)\]\]/g, (match, inner) => {
+    const target = wikiLinkTarget(inner);
+    return allowed.has(target.toLowerCase()) ? match : target;
+  });
+}
+
 function normalizeUnitArray(value) {
   if (!Array.isArray(value)) return [];
   return value.filter((item) => item && typeof item === "object").slice(0, 12);
@@ -544,7 +572,13 @@ function topicTemplateFromUnit(unit, sourceLink) {
     "",
     "## 关联主题",
     "",
-    listBlock(unit.related_topics.map((item) => `[[${item}]]`)),
+    "### 已链接主题",
+    "",
+    listBlock((unit.linked_related_topics || []).map((item) => `[[${item}]]`)),
+    "",
+    "### 候选相关主题",
+    "",
+    listBlock(unit.plain_related_topics || unit.related_topics),
     "",
     "## 证据来源",
     "",
@@ -671,6 +705,23 @@ class LlmWikiParserPlugin extends Plugin {
           : "已保存来源，但模型输出不足，未写入 Knowledge。");
       },
     });
+    this.addCommand({
+      id: "apply-clean-graph-view",
+      name: "Apply clean LLM Wiki graph view",
+      callback: async () => {
+        await this.applyCleanGraphView();
+        new Notice("已应用干净图谱视图。");
+      },
+    });
+    this.addCommand({
+      id: "reset-llm-wiki-artifacts",
+      name: "Reset LLM Wiki generated artifacts",
+      callback: async () => {
+        if (!window.confirm("将删除 Knowledge、Sources、System 以及根目录空白测试笔记；不会删除插件设置、API Key 或 QA。继续？")) return;
+        const count = await this.resetWikiArtifacts();
+        new Notice(`已清理 ${count} 个 LLM Wiki 产物。`);
+      },
+    });
     this.addSettingTab(new LlmWikiParserSettingTab(this.app, this));
     this.ensureCoreFolders().catch((error) => {
       console.error("LLM Wiki Parser failed to initialize folders.", error);
@@ -756,6 +807,62 @@ class LlmWikiParserPlugin extends Plugin {
     await this.saveSettings();
   }
 
+  async applyCleanGraphView() {
+    const path = normalizePath(".obsidian/graph.json");
+    let config = {};
+    try {
+      if (await this.app.vault.adapter.exists(path)) {
+        config = JSON.parse(await this.app.vault.adapter.read(path));
+      }
+    } catch (error) {
+      console.warn("Failed to read existing graph config; replacing with clean defaults.", error);
+      config = {};
+    }
+    const next = Object.assign({}, config, {
+      "collapse-filter": true,
+      search: `path:${this.settings.knowledgeFolder} -path:_index`,
+      showTags: false,
+      showAttachments: false,
+      hideUnresolved: true,
+      showOrphans: false,
+      "collapse-color-groups": true,
+      "collapse-display": true,
+      showArrow: false,
+      textFadeMultiplier: 0,
+      nodeSizeMultiplier: 1,
+      lineSizeMultiplier: 1,
+    });
+    await this.app.vault.adapter.write(path, JSON.stringify(next, null, 2));
+  }
+
+  async resetWikiArtifacts() {
+    const targets = [
+      this.settings.knowledgeFolder,
+      this.settings.sourceFolder,
+      this.settings.systemFolder,
+      "02_Entities",
+      "Concepts",
+      "03_Relations",
+      "04_Sources",
+      "05_Questions",
+    ].map((item) => normalizePath(item));
+    let deleted = 0;
+    for (const target of targets) {
+      const file = this.app.vault.getAbstractFileByPath(target);
+      if (file) {
+        await this.app.vault.delete(file, true);
+        deleted += 1;
+      }
+    }
+    const rootEmptyNotes = this.app.vault.getMarkdownFiles()
+      .filter((file) => !file.path.includes("/") && file.stat?.size === 0);
+    for (const file of rootEmptyNotes) {
+      await this.app.vault.delete(file, true);
+      deleted += 1;
+    }
+    return deleted;
+  }
+
   async ensureFolder(folder) {
     const normalized = normalizePath(folder);
     if (this.app.vault.getAbstractFileByPath(normalized)) return;
@@ -790,7 +897,7 @@ class LlmWikiParserPlugin extends Plugin {
       return;
     }
     const content = [
-      frontmatter({ type: "system", status: "active", created: today(), updated: today(), tags: ["llm-wiki"] }),
+      frontmatter({ type: "system", status: "active", created: today(), updated: today(), tags: ["llm-wiki-system"] }),
       "",
       "# Taxonomy",
       "",
@@ -994,6 +1101,7 @@ class LlmWikiParserPlugin extends Plugin {
       "把新增内容消化为可执行方法、判断规则、适用/不适用边界和可复习的知识点。",
       "保留 YAML frontmatter，更新 updated，sources 中加入新来源；category 和 subcategory 必须保留。",
       "证据来源章节必须包含新来源链接。",
+      "关联主题必须分成“已链接主题”和“候选相关主题”。只有 linked_related_topics 可以写成 [[双链]]；plain_related_topics 必须写纯文本。",
       "不要输出空列表占位；如果暂时没有内容，写“暂无”。",
       "",
       "旧主题笔记:",
@@ -1042,7 +1150,13 @@ class LlmWikiParserPlugin extends Plugin {
       "",
       "## 关联主题",
       "",
-      listBlock(unit.related_topics.map((item) => `[[${item}]]`)),
+      "### 已链接主题",
+      "",
+      listBlock((unit.linked_related_topics || []).map((item) => `[[${item}]]`)),
+      "",
+      "### 候选相关主题",
+      "",
+      listBlock(unit.plain_related_topics || unit.related_topics),
       "",
       "## 证据来源",
       "",
@@ -1083,6 +1197,7 @@ class LlmWikiParserPlugin extends Plugin {
     await this.archiveLegacyBrokenNotes();
     const input = await this.gatherInput(title, text, sourceType);
     const analysis = await this.analyzeMaterialWithModel(input.title, input.sourceType, input.text);
+    await this.resolveRelatedTopicLinks(analysis.knowledge_units);
     const sourcePath = await this.uniquePath(`${this.settings.sourceFolder}/${today()} - ${slugify(input.title)}.md`);
     const sourceContent = sourceTemplate(input.title, input.sourceType, ref || input.title, analysis, clip(input.text, this.settings.maxInputChars), []);
     const sourceFile = await this.app.vault.create(sourcePath, sourceContent);
@@ -1095,7 +1210,8 @@ class LlmWikiParserPlugin extends Plugin {
       const mergedTopic = topicFile.stat?.size > 0
         ? await this.mergeTopicWithUnit(existingTopic, unit, sourceLink)
         : topicTemplateFromUnit(unit, sourceLink);
-      await this.app.vault.modify(topicFile, mergedTopic);
+      const allowedLinks = new Set([sourceFile.basename, ...(unit.linked_related_topics || [])]);
+      await this.app.vault.modify(topicFile, sanitizeWikiLinks(mergedTopic, allowedLinks));
       await this.updateSubcategoryIndex(unit, topicFile);
       targets.push({ unit, file: topicFile, link: linkForFile(topicFile) });
     }
@@ -1103,6 +1219,29 @@ class LlmWikiParserPlugin extends Plugin {
     analysis.status = targets.length ? "archived" : "needs_review";
     await this.updateSourceWithDigestedTargets(sourceFile, input, ref, analysis, clip(input.text, this.settings.maxInputChars), targets);
     return { topicFiles: targets.map((target) => target.file), sourceFile, analysis, skippedUnits: analysis.skipped_units };
+  }
+
+  async resolveRelatedTopicLinks(units) {
+    const topicFiles = this.app.vault.getMarkdownFiles()
+      .filter((file) => file.path.startsWith(`${this.settings.knowledgeFolder}/`) && file.basename !== "_index");
+    const existing = new Set(topicFiles.map((file) => file.basename.toLowerCase()));
+    const batch = new Set((units || []).map((unit) => String(unit.topic || "").toLowerCase()).filter(Boolean));
+    for (const unit of units || []) {
+      const linked = [];
+      const plain = [];
+      for (const raw of unit.related_topics || []) {
+        const topic = slugify(wikiLinkTarget(raw));
+        if (isGraphNoiseTopic(topic) || topic.toLowerCase() === String(unit.topic).toLowerCase()) continue;
+        const key = topic.toLowerCase();
+        if (existing.has(key) || batch.has(key)) {
+          if (!linked.some((item) => item.toLowerCase() === key)) linked.push(topic);
+        } else if (!plain.some((item) => item.toLowerCase() === key)) {
+          plain.push(topic);
+        }
+      }
+      unit.linked_related_topics = linked.slice(0, 6);
+      unit.plain_related_topics = plain.slice(0, 8);
+    }
   }
 
   async digestFile(file) {
@@ -1953,6 +2092,42 @@ class LlmWikiParserSettingTab extends PluginSettingTab {
         this.plugin.settings.maxSearchResults = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.maxSearchResults;
         await this.plugin.saveSettings();
       }));
+
+    new Setting(containerEl)
+      .setName("Graph cleanup")
+      .setDesc("让关系图只显示 Knowledge 下的主题笔记，隐藏 Sources、System、_index 和未解析节点。")
+      .addButton((button) => button
+        .setButtonText("应用干净图谱视图")
+        .onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.applyCleanGraphView();
+            new Notice("已应用干净图谱视图。重新打开关系图即可看到效果。");
+          } catch (error) {
+            new Notice(`应用图谱视图失败：${error.message || error}`, 9000);
+          } finally {
+            button.setDisabled(false);
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName("Reset generated wiki")
+      .setDesc("删除 Knowledge、Sources、System 和根目录空白测试笔记；不会删除插件设置、API Key 或 QA。")
+      .addButton((button) => button
+        .setButtonText("清理 LLM Wiki 产物")
+        .setWarning()
+        .onClick(async () => {
+          if (!window.confirm("确认清理 LLM Wiki 产物？这会删除 Knowledge、Sources、System 和根目录空白测试笔记，但不会删除插件设置、API Key 或 QA。")) return;
+          button.setDisabled(true);
+          try {
+            const count = await this.plugin.resetWikiArtifacts();
+            new Notice(`已清理 ${count} 个 LLM Wiki 产物。`);
+          } catch (error) {
+            new Notice(`清理失败：${error.message || error}`, 9000);
+          } finally {
+            button.setDisabled(false);
+          }
+        }));
   }
 }
 
