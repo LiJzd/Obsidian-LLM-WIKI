@@ -17,7 +17,7 @@ This repository excludes `data.json` in `.gitignore`.
 The plugin sends model prompts and retrieved note excerpts to configured model providers:
 
 - DeepSeek
-- Xiaomi MiMo, if fallback is enabled and a key is configured
+- Xiaomi MiMo, if selected as primary or fallback and a key is configured
 
 Only use the plugin with documents you are comfortable sending to the configured provider.
 

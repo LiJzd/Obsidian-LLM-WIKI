@@ -1,6 +1,6 @@
 # LLM Wiki Parser
 
-LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials into a categorized LLM knowledge base, then lets you chat with that knowledge base using DeepSeek with optional Xiaomi MiMo fallback.
+LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials into a categorized LLM knowledge base, then lets you chat with that knowledge base using DeepSeek or Xiaomi MiMo.
 
 ## Features
 
@@ -8,8 +8,8 @@ LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials int
 - Preserve original materials in `Sources/`.
 - ChatGPT-like knowledge-base chat with conversation history.
 - Local retrieval over `Knowledge/` and `Sources/` before model answering.
-- DeepSeek Chat Completions as the primary provider.
-- Xiaomi MiMo as an optional fallback provider.
+- DeepSeek Chat Completions or Xiaomi MiMo as the primary provider.
+- Optional automatic fallback to the other configured provider.
 - Supports `docx`, `pptx`, `xlsx`, `md`, `txt`, `html`, `csv`, `json`, `yaml`, and `xml`.
 - Creates `System/Taxonomy.md` with a fixed LLM taxonomy.
 
@@ -30,10 +30,12 @@ LLM Wiki Parser is an Obsidian plugin that turns dragged or pasted materials int
 ## Quick Start
 
 1. Open `Settings -> Community plugins -> LLM Wiki Parser`.
-2. Add your DeepSeek API key.
-3. Optionally add a Xiaomi MiMo API key as fallback.
-4. Open the `LLM Wiki Parser` view to digest materials.
-5. Open the `LLM Wiki Chat` view to ask questions with conversation history.
+2. Choose `Primary provider`: `DeepSeek` or `Xiaomi MiMo`.
+3. Add the API key for your primary provider.
+4. Optionally add the other provider key as fallback.
+5. Use `Test providers` in settings to verify the key, endpoint, and model.
+6. Open the `LLM Wiki Parser` view to digest materials.
+7. Open the `LLM Wiki Chat` view to ask questions with conversation history.
 
 See [Getting Started](docs/GETTING_STARTED.md) for the full guide.
 

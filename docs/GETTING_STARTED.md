@@ -10,16 +10,18 @@ Settings -> Community plugins -> LLM Wiki Parser
 
 Set:
 
-- `DeepSeek API Key`: primary key.
-- `Xiaomi MiMo API Key`: optional fallback key.
-- `Use Xiaomi fallback`: keep enabled if you want automatic retry when DeepSeek fails.
+- `Primary provider`: choose `DeepSeek` or `Xiaomi MiMo`.
+- `DeepSeek API Key`: required when DeepSeek is primary or fallback.
+- `Xiaomi MiMo API Key`: required when Xiaomi MiMo is primary or fallback.
+- `Use Xiaomi fallback`: keep enabled if you want automatic retry with the other configured provider.
+- `Test providers`: verifies the selected key, endpoint, and model with a short request.
 
 Default provider settings:
 
 ```text
 DeepSeek endpoint: https://api.deepseek.com/chat/completions
 DeepSeek model: deepseek-chat
-Xiaomi endpoint: https://api.mimo-v2.com/v1/chat/completions
+Xiaomi endpoint: https://api.xiaomimimo.com/v1/chat/completions
 Xiaomi model: mimo-v2.5-pro
 ```
 

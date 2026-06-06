@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS = {
   useXiaomiFallback: true,
   xiaomiApiKey: "",
   xiaomiModel: "mimo-v2.5-pro",
-  xiaomiEndpoint: "https://api.mimo-v2.com/v1/chat/completions",
+  xiaomiEndpoint: "https://api.xiaomimimo.com/v1/chat/completions",
   knowledgeFolder: "Knowledge",
   sourceFolder: "Sources",
   qaFolder: "QA",
@@ -70,6 +70,10 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const SUPPORTED_FILE_LABELS = ["txt", "md", "docx", "pptx", "xlsx", "html", "csv", "json", "yaml", "xml"];
+
+function providerDisplayName(provider) {
+  return provider === "xiaomi" ? "Xiaomi MiMo" : "DeepSeek";
+}
 
 function today() {
   return window.moment ? window.moment().format("YYYY-MM-DD") : new Date().toISOString().slice(0, 10);
@@ -807,30 +811,48 @@ class LlmWikiParserPlugin extends Plugin {
   }
 
   async callLlm(messages, jsonMode = true) {
-    if (!this.settings.apiKey) {
-      if (this.settings.useXiaomiFallback && this.settings.xiaomiApiKey) {
-        return await this.callChatProvider("xiaomi", messages, jsonMode);
+    const primary = this.settings.provider === "xiaomi" ? "xiaomi" : "deepseek";
+    const fallback = primary === "deepseek" ? "xiaomi" : "deepseek";
+    const hasPrimaryKey = primary === "deepseek" ? this.settings.apiKey : this.settings.xiaomiApiKey;
+    const hasFallbackKey = fallback === "deepseek" ? this.settings.apiKey : this.settings.xiaomiApiKey;
+
+    if (!hasPrimaryKey) {
+      if (this.settings.useXiaomiFallback && hasFallbackKey) {
+        return await this.callChatProvider(fallback, messages, jsonMode);
       }
-      throw new Error("请先在插件设置里填写 DeepSeek API Key，或填写 Xiaomi MiMo API Key 作为备用。");
+      throw new Error("请先在插件设置里填写当前主模型 API Key，或配置备用模型 API Key。");
     }
+
     try {
-      return await this.callChatProvider("deepseek", messages, jsonMode);
+      return await this.callChatProvider(primary, messages, jsonMode);
     } catch (error) {
-      if (this.settings.useXiaomiFallback && this.settings.xiaomiApiKey) {
-        console.warn("DeepSeek failed; retrying with Xiaomi MiMo.", error);
+      if (this.settings.useXiaomiFallback && hasFallbackKey) {
+        console.warn(`${primary} failed; retrying with ${fallback}.`, error);
         try {
-          return await this.callChatProvider("xiaomi", messages, jsonMode);
-        } catch (xiaomiError) {
-          throw new Error(`${error.message}\nXiaomi fallback also failed: ${xiaomiError.message}`);
+          return await this.callChatProvider(fallback, messages, jsonMode);
+        } catch (fallbackError) {
+          throw new Error(`${error.message}\nFallback also failed: ${fallbackError.message}`);
         }
       }
       throw error;
     }
   }
 
+  async testProvider(provider) {
+    const output = await this.callChatProvider(provider, [
+      { role: "system", content: "Return JSON only." },
+      { role: "user", content: "Return {\"ok\":true,\"provider\":\"test\"}." },
+    ], true);
+    return extractJson(output);
+  }
+
+  hasAnyModelKey() {
+    return !!(this.settings.apiKey || this.settings.xiaomiApiKey);
+  }
+
   async digestWithModel(title, sourceType, text) {
     const content = clip(text, Number(this.settings.maxInputChars) || DEFAULT_SETTINGS.maxInputChars);
-    if (!this.settings.apiKey) {
+    if (!this.hasAnyModelKey()) {
       return coerceDigest(null, title, sourceType, content);
     }
     const prompt = [
@@ -853,7 +875,7 @@ class LlmWikiParserPlugin extends Plugin {
   }
 
   async mergeTopicWithModel(existingContent, digest, sourceLink) {
-    if (!this.settings.apiKey) {
+    if (!this.hasAnyModelKey()) {
       return this.appendTopic(existingContent, digest, sourceLink);
     }
     const prompt = [
@@ -1042,10 +1064,10 @@ class LlmWikiParserPlugin extends Plugin {
         results,
       };
     }
-    if (!this.settings.apiKey) {
+    if (!this.hasAnyModelKey()) {
       return {
         answer: [
-          "未填写 DeepSeek API Key，先返回本地检索结果：",
+          "未填写可用 API Key，先返回本地检索结果：",
           "",
           ...results.map((item) => `- ${linkForFile(item.file)}: ${item.excerpt.slice(0, 180)}`),
         ].join("\n"),
@@ -1090,7 +1112,7 @@ class LlmWikiParserPlugin extends Plugin {
     let answer;
     if (!results.length) {
       answer = "库里没有检索到足够相关的主题或来源，因此不能给出有依据的回答。";
-    } else if (!this.settings.apiKey && !(this.settings.useXiaomiFallback && this.settings.xiaomiApiKey)) {
+    } else if (!this.hasAnyModelKey()) {
       answer = [
         "未填写可用 API Key，先返回本地检索结果：",
         "",
@@ -1247,8 +1269,17 @@ class LlmWikiParserView extends ItemView {
     this.statusEl = header.createDiv({ cls: "llm-wiki-parser__status-badge", text: "就绪" });
 
     const meta = root.createDiv({ cls: "llm-wiki-parser__meta-grid" });
-    this.createMetric(meta, "主模型", `DeepSeek / ${this.plugin.settings.model || "deepseek-chat"}`);
-    this.createMetric(meta, "备用", this.plugin.settings.xiaomiApiKey ? `Xiaomi / ${this.plugin.settings.xiaomiModel}` : "未配置");
+    const primaryProvider = this.plugin.settings.provider === "xiaomi" ? "xiaomi" : "deepseek";
+    const fallbackProvider = primaryProvider === "deepseek" ? "xiaomi" : "deepseek";
+    const primaryModel = primaryProvider === "xiaomi"
+      ? this.plugin.settings.xiaomiModel || DEFAULT_SETTINGS.xiaomiModel
+      : this.plugin.settings.model || DEFAULT_SETTINGS.model;
+    const fallbackReady = fallbackProvider === "xiaomi" ? this.plugin.settings.xiaomiApiKey : this.plugin.settings.apiKey;
+    const fallbackModel = fallbackProvider === "xiaomi"
+      ? this.plugin.settings.xiaomiModel || DEFAULT_SETTINGS.xiaomiModel
+      : this.plugin.settings.model || DEFAULT_SETTINGS.model;
+    this.createMetric(meta, "主模型", `${providerDisplayName(primaryProvider)} / ${primaryModel}`);
+    this.createMetric(meta, "备用", fallbackReady ? `${providerDisplayName(fallbackProvider)} / ${fallbackModel}` : "未配置");
     this.createMetric(meta, "入库", `${this.plugin.settings.knowledgeFolder} + ${this.plugin.settings.sourceFolder}`);
     this.createMetric(meta, "格式", SUPPORTED_FILE_LABELS.join(" · "));
 
@@ -1567,6 +1598,18 @@ class LlmWikiParserSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "LLM Wiki Parser" });
 
     new Setting(containerEl)
+      .setName("Primary provider")
+      .setDesc("选择默认调用的模型。另一个模型在开启 fallback 后可作为备用。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("deepseek", "DeepSeek")
+        .addOption("xiaomi", "Xiaomi MiMo")
+        .setValue(this.plugin.settings.provider || DEFAULT_SETTINGS.provider)
+        .onChange(async (value) => {
+          this.plugin.settings.provider = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
       .setName("DeepSeek API Key")
       .setDesc("保存在当前 vault 的插件数据中。")
       .addText((text) => {
@@ -1614,6 +1657,36 @@ class LlmWikiParserSettingTab extends PluginSettingTab {
         this.plugin.settings.xiaomiEndpoint = value.trim() || DEFAULT_SETTINGS.xiaomiEndpoint;
         await this.plugin.saveSettings();
       }));
+
+    new Setting(containerEl)
+      .setName("Test providers")
+      .setDesc("发送一次极短测试请求，确认密钥、endpoint 和模型名可用。")
+      .addButton((button) => button
+        .setButtonText("测试 DeepSeek")
+        .onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.testProvider("deepseek");
+            new Notice("DeepSeek 测试通过。");
+          } catch (error) {
+            new Notice(`DeepSeek 测试失败：${error.message || error}`, 9000);
+          } finally {
+            button.setDisabled(false);
+          }
+        }))
+      .addButton((button) => button
+        .setButtonText("测试 Xiaomi")
+        .onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.testProvider("xiaomi");
+            new Notice("Xiaomi MiMo 测试通过。");
+          } catch (error) {
+            new Notice(`Xiaomi MiMo 测试失败：${error.message || error}`, 9000);
+          } finally {
+            button.setDisabled(false);
+          }
+        }));
 
     new Setting(containerEl)
       .setName("Model")
